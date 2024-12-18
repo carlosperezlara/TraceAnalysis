@@ -1,6 +1,8 @@
+
 #include "generic.h"
 #include <vector>
 #include <utility>
+#include <iostream>
 
 //=============================
 Measure::Measure( int size, int pol ) {
@@ -162,23 +164,36 @@ float Measure::avg( int ini, int fin ) {
 //=============================
 //=============================
 //=============================
-PulseMeasure::PulseMeasure( int size ) : Measure(size) {
+PulseMeasure::PulseMeasure( int size, int polarity ) : Measure(size,polarity) {
 }
 //=============================
-void PulseMeasure::ProcessPulse( float basemin, float basemax, float gatemin, float gatemax ) {
-  int a = basemin*fSize;
-  int b = basemax*fSize;
-  int c = gatemin*fSize;
-  int d = gatemax*fSize;
+void PulseMeasure::SetGates( float basemin, float basemax, float gatemin, float gatemax ) {
+  fBaseMin = basemin;
+  fBaseMax = basemax;
+  fGateMin = gatemin;
+  fGateMax = gatemax;
+}
+//=============================
+void PulseMeasure::Process() {
+  int a = fBaseMin*fSize;
+  int b = fBaseMax*fSize;
+  int c = fGateMin*fSize;
+  int d = fGateMax*fSize;
 
+  //std::cout << "iGates: "  << a << " " << b << " " << c << " " << d << std::endl;
+  //std::cout << "tGates: "  << fTi[a] << " " << fTi[b] << " " << fTi[c] << " " << fTi[d] << std::endl;
+  //std::cout << "vGates: "  << fCh[a] << " " << fCh[b] << " " << fCh[c] << " " << fCh[d] << std::endl;
+  
   // Baseline
   fPulse_Baseline = avg( a, b );
 
+  //std::cout << "min: "  << min( c, d ) << " ";
+  //std::cout << "max: "  << min( c, d ) << std::endl;
   // Amplitude
   if(fConfig_TriggerPolarity==0) {
-     fPulse_Amplitude = fPulse_Baseline - min( b, c ); // negative polarity
+     fPulse_Amplitude = fPulse_Baseline - fCh[min( c, d )]; // negative polarity
   } else {
-    fPulse_Amplitude = max( b, c ) - fPulse_Baseline; // positive polarity
+    fPulse_Amplitude = fCh[max( c, d )] - fPulse_Baseline; // positive polarity
   }
 
   // Fix Threshold
@@ -202,32 +217,39 @@ void PulseMeasure::ProcessPulse( float basemin, float basemax, float gatemin, fl
     fPulse_FT_QR.push_back( 0 );
   }
 
+  //std::cout << " Baseline: " << fPulse_Baseline << " || ";
+  //std::cout << "Amplitude: " << fPulse_Amplitude << std::endl;
   // CF Threshold
   fPulse_CF_LR.clear();
   fPulse_CF_QR.clear();
   for(unsigned int i=0; i<fPulse_Config_CF_Fractions.size(); ++i) {
+    //std::cout << "  Running for " << fPulse_Config_CF_Fractions[i];
     std::vector<int> points;
     float thr;
     if(fConfig_TriggerPolarity==0) {
-      thr = fPulse_Baseline - fPulse_Baseline*fPulse_Config_CF_Fractions[i];
+      thr = fPulse_Baseline - fPulse_Amplitude*fPulse_Config_CF_Fractions[i];
       points = find_slices_up( thr );
     } else {
-      thr = fPulse_Baseline*fPulse_Config_CF_Fractions[i] - fPulse_Baseline;
+      thr = fPulse_Amplitude*fPulse_Config_CF_Fractions[i] - fPulse_Baseline;
       points = find_slices_dw( thr );
     }
+    //std::cout << " THR: " << thr;
     if(points.size()!=1) {
       //std::cout << "Either too many crossing or none" << std::endl;
-      fPulse_FT_LR.push_back(0);
-      fPulse_FT_QR.push_back(0);
+      fPulse_CF_LR.push_back(0);
+      fPulse_CF_QR.push_back(0);
+      //std::cout << "BUMP" << std::endl;
       continue;
     }
-    fPulse_FT_LR.push_back( Measure::x_linear_regres( points[0]-1, points[0]+1, thr ) );
-    fPulse_FT_QR.push_back( 0 );
+    float lreg = Measure::x_linear_regres( points[0]-1, points[0]+1, thr );
+    fPulse_CF_LR.push_back( lreg );
+    fPulse_CF_QR.push_back( 0 );
+    //std::cout << "  iCenter " << points[0] << "   tLREG " << lreg << std::endl;
   }
   return;
 }
 //=============================
-SquareMeasure::SquareMeasure( int size ) : Measure(size) {
+SquareMeasure::SquareMeasure( int size, int polarity ) : Measure(size,polarity) {
 }
 //=============================
 void SquareMeasure::SetThresholds( float val, float min, float max ) {
@@ -236,7 +258,7 @@ void SquareMeasure::SetThresholds( float val, float min, float max ) {
   fSquare_Config_Max = max;
 }
 //=============================
-void SquareMeasure::ProcessSquare() {
+void SquareMeasure::Process() {
   // Fix Threshold
   fSquare_LR.clear();
   fSquare_QR.clear();
@@ -244,7 +266,9 @@ void SquareMeasure::ProcessSquare() {
   float min = fSquare_Config_Min;
   float max = fSquare_Config_Max;
   std::vector<std::pair<int,int>> pointPairs;
-  
+  //std::cout << " min " << fSquare_Config_Min << " ";
+  //std::cout << " max " << fSquare_Config_Max << " ";
+  //std::cout << std::endl;
   if(fConfig_TriggerPolarity==1) {
     // positive slope
     pointPairs = find_brackets_up( min, max );
@@ -252,9 +276,15 @@ void SquareMeasure::ProcessSquare() {
     // negative slope
     pointPairs = find_brackets_dw( max, min );
   }
+  //std::cout << " pairs " << pointPairs.size() << " ";
   for(unsigned int i=0; i<pointPairs.size(); ++i) {
-    fSquare_LR.push_back( Measure::x_linear_regres( pointPairs[i].first, pointPairs[i].second, val ) );
+    //std::cout << " (" << pointPairs[i].first << ", " <<  pointPairs[i].second << ") =>";
+    //std::cout << " (" << fCh[pointPairs[i].first] << ", " <<  fCh[pointPairs[i].second] << ")  ";
+    float lr = Measure::x_linear_regres( pointPairs[i].first, pointPairs[i].second, val );
+    //std::cout << lr << " || ";
+    fSquare_LR.push_back( lr );
     fSquare_QR.push_back( 0 );
   }
+  //std::cout << std::endl;
   return;
 }

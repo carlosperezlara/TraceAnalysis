@@ -12,6 +12,7 @@ public:
   Measure( int size, int polarity=0 );
   virtual ~Measure() {}
   void SetData( float *ti, float *ch ) { fTi=ti; fCh=ch; }
+  virtual void Process() {;}
   
 protected:
   float  x_linear_regres( int ini, int fin, float y );
@@ -33,11 +34,12 @@ protected:
 //======================================
 class PulseMeasure : public Measure {
 public:
-  PulseMeasure( int size );
+  PulseMeasure( int size, int polarity=0 );
   virtual ~PulseMeasure() {}
-  void AddCF( float per );
-  void AddFT( float val );
-  void ProcessPulse( float basemin, float basemax, float gatemin, float gatemax );
+  void AddCF( float per ) {fPulse_Config_CF_Fractions.push_back(per);}
+  void AddFT( float val ) {fPulse_Config_FT_Values.push_back(val);}
+  void Process();
+  void SetGates( float basemin, float basemax, float gatemin, float gatemax );
   float fPulse_Baseline;
   float fPulse_Amplitude;
   std::vector<float> fPulse_CF_LR;
@@ -46,6 +48,10 @@ public:
   std::vector<float> fPulse_FT_QR;
   
 private:
+  float fBaseMin;
+  float fBaseMax;
+  float fGateMin;
+  float fGateMax;
   std::vector<float> fPulse_Config_CF_Fractions;
   std::vector<float> fPulse_Config_FT_Values;
 };
@@ -54,10 +60,10 @@ private:
 //======================================
 class SquareMeasure : public Measure {
 public:
-  SquareMeasure( int size );
+  SquareMeasure( int size, int polarity=0 );
   void SetThresholds( float val, float min, float max );
   virtual ~SquareMeasure() {}
-  void ProcessSquare();
+  void Process();
   std::vector<float> fSquare_LR;
   std::vector<float> fSquare_QR;
   
